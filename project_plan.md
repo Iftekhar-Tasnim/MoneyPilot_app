@@ -1,39 +1,41 @@
-# Smart Voice Expense Tracker - Project Progress
+# Money Pilot - Detailed Project Plan (Updated)
 
-## ✅ Completed Milestones
+## 1. Input & Interaction
+*   [x] **Voice-First Interface**: Prominent microphone button for recording.
+*   [x] **Automatic Language Detection**: Supports English and Bengali voice commands.
+*   [x] **Natural Language Processing (NLP)**: `GeminiService` to parse transactions.
 
-### Phase 1: Foundation & UI
--   [x] **Project Structure**: Set up clean MVVM-style folder structure.
--   [x] **Dashboard UI**: Implemented Balance Card, Transaction List, and Language Switcher.
--   [x] **Manual Input**: Added Income/Expense forms with category selection.
--   [x] **Localization**: Full English and Bangla UI translation.
+## 2. Core Financial Tracking
+*   [x] **Expense Categorization**: Auto-sorting into standard categories.
+*   [x] **Manual Override**: Edit/Delete transactions.
+*   [x] **Dual Loan Tracking**:
+    *   [x] **Given Loans**: Track money lent to others (Asset).
+    *   [x] **Taken Loans**: Track money borrowed (Liability).
+*   [x] **Income Management**: Input monthly salary to track "Remaining Balance".
 
-### Phase 2: Core Services (The Brains)
--   [x] **Database Integration**: Set up SQLite (`DatabaseService`) for persistent local storage.
--   [x] **Voice Service**: specialized `VoiceService` with timeout handling and error recovery.
--   [x] **Gemini AI Service**: 
-    -   Implemented `GeminiService` to parse natural language.
-    -   Added **Smart Model Discovery** to auto-detect valid models (`flash`, `pro`) for the user's key.
-    -   Engineered prompts for accurate JSON extraction context-aware categorization.
+## 3. Data Management & Privacy
+*   [x] **Local-First Storage**: SQLite database (`sqflite`) keeps all data on-device.
+*   [x] **Monthly Cycle Logic**:
+    *   [x] **Automatic Reset**: Dashboard focuses on current month.
+    *   [x] **Historical Archive**: Access previous months' data via "All Transactions".
 
-### Phase 3: Settings & Configuration
--   [x] **API Key Management**: storage securement via `SharedPreferences`.
--   [x] **Test API Feature**: Added a diagnostic tool to verify API connection and model compatibility.
--   [x] **Dynamic Error Handling**: detailed feedback for network or API issues.
+## 4. AI Insights & Analysis
+*   [x] **Financial Health Dashboard**:
+    *   [x] **Total Expense**: Visible on Dashboard.
+    *   [x] **Income vs Expense**: Balance Card visualisation.
+    *   [x] **Net Position**: (Income - Expenses + Loans).
+*   [x] **Performance Summary**: "What is going well" (AI Feedback).
+*   [x] **Actionable Suggestions**: "What to do better" (AI Advice).
+
+## 5. Technical Requirements
+*   [x] **Mobile-Responsive**: Flutter UI adapts to screen sizes.
+*   [x] **Offline Capability**: Core features work offline; AI requires internet.
+*   [ ] **Light/Dark Mode**: System-aware theming (Partially implemented, needs verification).
 
 ---
 
-## 🚧 In Progress / Next Steps
-
-### Phase 4: Data Visualization (Coming Soon)
--   [ ] **Charts**: Add Pie/Bar charts to visualize spending by category.
--   [ ] **Time Filters**: View expenses by Week, Month, or Custom Date.
-
-### Phase 5: Advanced Features
--   [ ] **Budget Goals**: Set monthly limits for categories (e.g., "Food: 5000 tk").
--   [ ] **Backup & Restore**: Export data to JSON/CSV for safety.
--   [ ] **Receipt Scanning**: Use Gemini Vision to scan paper receipts? (Potential feature!)
-
-## 🐛 Known Issues & Notes
--   **Bangla Voice Input**: Works well but requires the Android/iOS device to have the Bangla language pack installed in system settings.
--   **API Limits**: Free Gemini keys have rate limits; app handles basic errors but heavy usage might require backoff logic.
+## ✅ Completed Milestones
+*   **Foundation**: Project structure, MVVM architecture, App Icon/Logo.
+*   **Voice & AI**: Speech-to-Text integration, Gemini API parsing, Smart Model Discovery.
+*   **UI/UX**: Dashboard with Charts (Line), Localization (En/Bn), Privacy Policy, Settings.
+*   **Features**: Income Management, Loan Tracking, Quick Stats, AI Money Coach.

@@ -29,12 +29,21 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   String? _selectedCategory;
   
   // Predefined Categories
-  final List<String> _incomeCategories = ['Salary', 'Freelance', 'Business', 'Gift', 'Other'];
-  final List<String> _expenseCategories = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Health', 'Other'];
+  final List<String> _incomeCategories = ['Salary', 'Freelance', 'Business', 'Investment', 'Gift', 'Other'];
+  final List<String> _expenseCategories = [
+    'Food', 'Dining', 'Groceries', 
+    'Transport', 'Fuel', 
+    'Shopping', 'Clothing', 'Electronics',
+    'Bills', 'Rent', 'Utilities', 
+    'Entertainment', 'Movies',
+    'Health', 'Medicine', 
+    'Education', 'Tuition', 'Travel', 'Other'
+  ];
 
   @override
   void initState() {
     super.initState();
+    // Ensure selected category is valid initially
     _selectedCategory = widget.isIncome ? _incomeCategories.first : _expenseCategories.first;
   }
 

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:app_settings/app_settings.dart';
 import '../utils/app_strings.dart';
 import '../services/gemini_service.dart';
+import 'privacy_policy_screen.dart';
+import 'about_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   final String currentLanguage;
@@ -47,6 +50,14 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           _buildSettingsTile(
             context,
+            icon: Icons.mic_none_outlined,
+            title: AppStrings.get(lang, 'voice_settings'),
+            color: const Color(0xFF10B981), // Greenish
+            onTap: () => AppSettings.openAppSettings(type: AppSettingsType.settings), // Generic settings
+          ),
+          const SizedBox(height: 16),
+          _buildSettingsTile(
+            context,
             icon: Icons.backup_outlined,
             title: AppStrings.get(lang, 'backup_restore'),
             color: const Color(0xFF0EA5E9),
@@ -59,6 +70,36 @@ class SettingsScreen extends StatelessWidget {
             title: AppStrings.get(lang, 'change_password'),
             color: const Color(0xFFF59E0B),
             onTap: () => _showComingSoon(context, lang),
+          ),
+          const SizedBox(height: 16),
+          _buildSettingsTile(
+            context,
+            icon: Icons.privacy_tip_outlined,
+            title: AppStrings.get(lang, 'privacy_policy'),
+            color: const Color(0xFF8B5CF6), // Violet
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PrivacyPolicyScreen(currentLanguage: lang),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          _buildSettingsTile(
+            context,
+            icon: Icons.info_outline,
+            title: AppStrings.get(lang, 'about'),
+            color: const Color(0xFFEC4899), // Pink
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AboutScreen(currentLanguage: lang),
+                ),
+              );
+            },
           ),
         ],
       ),

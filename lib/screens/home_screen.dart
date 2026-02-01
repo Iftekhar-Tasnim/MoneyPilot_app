@@ -2,13 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import 'package:app_settings/app_settings.dart';
+
 import '../models/transaction_model.dart';
 import '../services/database_service.dart';
 import '../screens/settings_screen.dart';
+import '../screens/all_transactions_screen.dart';
 import '../widgets/add_transaction_sheet.dart';
 import '../utils/app_strings.dart';
 import '../services/gemini_service.dart';
 import '../services/voice_service.dart';
+import '../widgets/spending_trend_chart.dart';
+import '../widgets/quick_stats_card.dart';
+import 'income_screen.dart';
+import 'loans_screen.dart';
+import '../widgets/insights_card.dart';
+import '../services/database_service.dart';
+import 'notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,13 +35,23 @@ class _HomeScreenState extends State<HomeScreen> {
   final VoiceService _voiceService = VoiceService();
   bool _isListening = false;
   bool _isProcessing = false;
+  final ValueNotifier<String?> _voiceWarningNotifier = ValueNotifier(null);
+  int _unreadCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _refreshData();
+    _loadData();
     _initVoice();
   }
+
+  @override
+  void dispose() {
+    _voiceWarningNotifier.dispose();
+    super.dispose();
+  }
+
+
 
   void _initVoice() async {
     await _voiceService.init();
@@ -59,13 +79,19 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
-  Future<void> _refreshData() async {
+  Future<void> _loadData() async { // Renamed from _refreshData
     setState(() => _isLoading = true);
-    final transactions = await DatabaseService.instance.readAllTransactions();
-    final summary = await DatabaseService.instance.getSummary();
+    
+    // Monthly Filter Logic
+    final now = DateTime.now();
+    final transactions = await DatabaseService.instance.getTransactionsForMonth(now.year, now.month);
+    final summary = await DatabaseService.instance.getMonthlySummary(now.year, now.month);
+    final unreadCount = await DatabaseService.instance.getUnreadNotificationCount();
+
     setState(() {
       _transactions = transactions;
       _summary = summary;
+      _unreadCount = unreadCount;
       _isLoading = false;
     });
   }
@@ -84,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     setState(() => _isListening = true);
+    _voiceWarningNotifier.value = null; // Reset warning
     
     // Show listening dialog
     showDialog(
@@ -94,14 +121,52 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(width: 20),
-            Expanded(child: Text(AppStrings.get(_currentLanguage, 'speak') + '...')),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(AppStrings.get(_currentLanguage, 'speak') + '...'),
+                  ValueListenableBuilder<String?>(
+                    valueListenable: _voiceWarningNotifier,
+                    builder: (context, warning, _) {
+                      if (warning == null) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          warning == 'online_mode_pack_missing' 
+                              ? 'Online Mode: Offline pack missing' 
+                              : warning,
+                          style: const TextStyle(fontSize: 12, color: Colors.orange),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
+          ValueListenableBuilder<String?>(
+            valueListenable: _voiceWarningNotifier,
+            builder: (context, warning, _) {
+              if (warning == 'online_mode_pack_missing') {
+                return TextButton(
+                  onPressed: () {
+                     // Open settings to help user install pack
+                     // We use AppSettings.openAppSettings() as a generic fallback or openInputMethodSettings
+                     AppSettings.openAppSettings(); 
+                  },
+                  child: const Text('Open Settings'),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           TextButton(
             onPressed: () async {
               await _voiceService.stop(); 
-              // State update handled by listener or explicitly:
               if (mounted) setState(() => _isListening = false);
               Navigator.pop(ctx);
             },
@@ -110,20 +175,21 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     ).then((_) {
-       // Cleanup if dismissed by tap-out
        if (_isListening) {
          _voiceService.stop();
-         setState(() => _isListening = false);
+         setState(() {
+            _isListening = false;
+         });
        }
     });
 
-    final locale = _currentLanguage == 'bn' ? 'bn_BD' : 'en_US';
-
-    await _voiceService.startListening(
-      localeId: locale,
+    // Pass simple code 'bn' or 'en' - service handles locale logic
+    final warning = await _voiceService.startListening(
+      languageCode: _currentLanguage,
       onResult: (text) async {
         if (_isProcessing) return; 
         _isProcessing = true;
+        _voiceWarningNotifier.value = null; 
         
         await _voiceService.stop();
 
@@ -137,6 +203,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _isProcessing = false;
           return;
         }
+
+        print('DEBUG: Recognized Voice Text: "$text"');
 
         // Show processing dialog
         if (mounted) {
@@ -155,51 +223,88 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
 
-        final data = await GeminiService.instance.parseTransaction(text);
-        
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.pop(context); // Close processing dialog
-        }
-
-        if (data != null && mounted) {
-          final tx = TransactionModel(
-             title: data['title'] ?? 'Voice Entry',
-             amount: (data['amount'] as num).toDouble(),
-             date: DateTime.now(),
-             type: (data['type'] ?? 'expense').toLowerCase(),
-             category: data['category'] ?? 'Other',
-          );
-
-          await DatabaseService.instance.create(tx);
-          _refreshData();
+        try {
+          final data = await GeminiService.instance.parseTransaction(text);
           
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Transaction Added!'), backgroundColor: Colors.green),
-          );
-        } else if (mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Could not understand. Try again.'), backgroundColor: Colors.red),
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context); // Close processing dialog
+          }
+
+          if (data != null && mounted) {
+            final tx = TransactionModel(
+               title: data['title'] ?? 'Voice Entry',
+               amount: (data['amount'] as num).toDouble(),
+               date: DateTime.now(),
+               type: (data['type'] ?? 'expense').toLowerCase(),
+               category: data['category'] ?? 'Other',
             );
+
+            await DatabaseService.instance.create(tx);
+            _loadData();
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Transaction Added!'), backgroundColor: Colors.green),
+            );
+          } else if (mounted) {
+               ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not understand. Try again.'), backgroundColor: Colors.red),
+              );
+          }
+        } catch (e) {
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context); // Close processing dialog
+          }
+          
+          String errorMsg = 'Error processing voice.';
+          if (e.toString().contains('Quota exceeded')) {
+            errorMsg = 'API Limit Reached. Please wait.';
+          } else if (e.toString().contains('API Key not found')) {
+            errorMsg = 'API Key missing. Check Settings.';
+          }
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+            );
+          }
         }
         
         _isProcessing = false;
       },
     );
+
+    // Update notifier if warning returned
+    if (warning != null && mounted && _isListening) {
+       _voiceWarningNotifier.value = warning;
+    }
   }
 
-  void _showAddTransactionSheet({required bool isIncome}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
-      ),
-      builder: (context) => AddTransactionSheet(
-        isIncome: isIncome,
-        currentLanguage: _currentLanguage,
-        onTransactionAdded: _refreshData,
-      ),
-    );
+  void _showAddTransactionSheet({bool isIncome = false}) {
+    if (isIncome) {
+       Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => IncomeScreen(
+            currentLanguage: _currentLanguage,
+            onIncomeAdded: _loadData,
+          ),
+        ),
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+        ),
+        builder: (context) => AddTransactionSheet(
+          isIncome: isIncome,
+          currentLanguage: _currentLanguage,
+          onTransactionAdded: _loadData,
+        ),
+      );
+    }
   }
 
   @override
@@ -218,6 +323,48 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
+          // Notification Bell
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: Color(0xFF1A1C1E)),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => NotificationsScreen(language: _currentLanguage),
+                    ),
+                  );
+                  _loadData();
+                },
+              ),
+              if (_unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFB91C1C),
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _unreadCount > 9 ? '9+' : _unreadCount.toString(),
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           // Language Switcher
           GestureDetector(
             onTap: _toggleLanguage,
@@ -265,17 +412,62 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       BalanceCard(summary: _summary, language: _currentLanguage),
-                      const SizedBox(height: 24),
-                      Text(
-                        AppStrings.get(_currentLanguage, 'recent_transactions'),
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF1A1C1E),
-                        ),
+                      
+                      // Quick Stats
+                      const SizedBox(height: 16),
+                      QuickStatsCard(transactions: _transactions, language: _currentLanguage),
+
+                      // AI Insights
+                      const SizedBox(height: 16),
+                      InsightsCard(transactions: _transactions, currentLanguage: _currentLanguage),
+
+                      // Chart
+                      SpendingTrendChart(transactions: _transactions, language: _currentLanguage),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Recent Transactions Header with See All
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            AppStrings.get(_currentLanguage, 'recent_transactions'),
+                            style: GoogleFonts.outfit(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF1A1C1E),
+                            ),
+                          ),
+                          if (_transactions.length > 5)
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => AllTransactionsScreen(
+                                      language: _currentLanguage,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                AppStrings.get(_currentLanguage, 'see_all'),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF4F46E5),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 16),
-                      TransactionList(transactions: _transactions, language: _currentLanguage),
+                      
+                      // Limited List
+                      TransactionList(
+                        transactions: _transactions.take(5).toList(), 
+                        language: _currentLanguage
+                      ),
                     ],
                   ),
                 ),
@@ -332,7 +524,37 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
 
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 16),
+
+                      // Loans Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDBEAFE), // Light Blue
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: () {
+                             Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => LoansScreen(currentLanguage: _currentLanguage),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.handshake_outlined, color: Color(0xFF1E40AF)), // Blue Handshake
+                          tooltip: AppStrings.get(_currentLanguage, 'loans'),
+                          padding: const EdgeInsets.all(16),
+                        ),
+                      ),
+
+                      const SizedBox(width: 16),
 
                       // Voice Input Button (Main)
                       Container(

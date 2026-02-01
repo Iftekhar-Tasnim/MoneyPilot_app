@@ -33,9 +33,14 @@ class GeminiService {
       - title: (string) short description
       - amount: (number) positive value
       - type: (string) either "income" or "expense"
-      - category: (string) one of [Food, Transport, Shopping, Bills, Entertainment, Health, Salary, Freelance, Business, Gift, Other] relative to the type.
-      
-      If the text is Bangla, translate/infer relevant English categories and title.
+      - category: (string) The Best fitting category.
+        
+        Use these standard categories if they fit well: 
+        [Food, Dining, Groceries, Transport, Fuel, Shopping, Clothing, Bills, Rent, Utilities, Entertainment, Health, Education, Salary, Freelance, Business, Investment, Gift, Travel]
+        
+        **IMPORTANT:** If the transaction does not fit ANY of the above, **INVENT** a new, short (1 word) category name that describes it (e.g., "Charity", "Tax", "Loan").
+        
+      If the text is Bangla, translate and infer the best English category.
       If meaningful data is missing, return null.
       JSON:
     ''';
@@ -48,12 +53,19 @@ class GeminiService {
       if (responseText == null) return null;
 
       // Clean up markdown code blocks if present
+      print('DEBUG: Gemini Raw Response: $responseText');
       final cleanJson = responseText.replaceAll('```json', '').replaceAll('```', '').trim();
+      print('DEBUG: Cleaned JSON: $cleanJson');
       
-      return jsonDecode(cleanJson) as Map<String, dynamic>;
+      try {
+        return jsonDecode(cleanJson) as Map<String, dynamic>;
+      } catch (e) {
+        print('DEBUG: JSON Parse Error: $e');
+        throw Exception('Failed to parse AI response'); 
+      }
     } catch (e) {
       print('Gemini Error: $e');
-      return null;
+      rethrow; // Propagate error (e.g. Quota exceeded) to UI
     }
   }
 
@@ -137,6 +149,44 @@ class GeminiService {
 
     } catch (e) {
       return 'Discovery Error: $e';
+    }
+  }
+  // Financial Advice (Money Coach)
+  Future<Map<String, String>?> getFinancialAdvice(List<dynamic> transactions) async {
+    final model = await _getModel();
+    if (model == null) throw Exception('API Key not found');
+
+    // Summarize data to save tokens
+    if (transactions.isEmpty) return null;
+    
+    // Take last 20 transactions for analysis
+    final recentTx = transactions.take(20).map((tx) {
+      return "${tx.amount} (${tx.category})";
+    }).join(", ");
+
+    final prompt = '''
+      Analyze these recent expenses: [$recentTx].
+      Act as a friendly Money Coach.
+      Return ONLY a JSON object with two keys:
+      - "good": One short sentence on what is going well (positive reinforcement).
+      - "tip": One short, actionable tip to save money based on this data.
+      
+      Keep it very concise (max 15 words each).
+      JSON:
+    ''';
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await model.generateContent(content);
+      final responseText = response.text;
+
+      if (responseText == null) return null;
+
+      final cleanJson = responseText.replaceAll('```json', '').replaceAll('```', '').trim();
+      return Map<String, String>.from(jsonDecode(cleanJson));
+    } catch (e) {
+      print('Gemini Advice Error: $e');
+      return null;
     }
   }
 }
