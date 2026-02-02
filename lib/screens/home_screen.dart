@@ -211,12 +211,12 @@ class _HomeScreenState extends State<HomeScreen> {
            showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (ctx) => const AlertDialog(
+            builder: (ctx) => AlertDialog(
               content: Row(
                 children: [
                    CircularProgressIndicator(),
                    SizedBox(width: 20),
-                   Text('Processing...'),
+                   Expanded(child: Text(AppStrings.get(_currentLanguage, 'processing'))),
                 ],
               ),
             ),
@@ -243,11 +243,17 @@ class _HomeScreenState extends State<HomeScreen> {
             _loadData();
             
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Transaction Added!'), backgroundColor: Colors.green),
+              SnackBar(
+                content: Text(AppStrings.get(_currentLanguage, 'transaction_added')),
+                backgroundColor: Colors.green
+              ),
             );
           } else if (mounted) {
                ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Could not understand. Try again.'), backgroundColor: Colors.red),
+                SnackBar(
+                  content: Text(AppStrings.get(_currentLanguage, 'could_not_understand')),
+                  backgroundColor: Colors.red
+                ),
               );
           }
         } catch (e) {
@@ -255,11 +261,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.pop(context); // Close processing dialog
           }
           
-          String errorMsg = 'Error processing voice.';
+          String errorMsg = AppStrings.get(_currentLanguage, 'voice_error'); // Default fallback if not specific
           if (e.toString().contains('Quota exceeded')) {
-            errorMsg = 'API Limit Reached. Please wait.';
+            errorMsg = AppStrings.get(_currentLanguage, 'api_limit_reached');
           } else if (e.toString().contains('API Key not found')) {
-            errorMsg = 'API Key missing. Check Settings.';
+            errorMsg = AppStrings.get(_currentLanguage, 'api_key_missing');
           }
           
           if (mounted) {
@@ -279,32 +285,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showAddTransactionSheet({bool isIncome = false}) {
-    if (isIncome) {
-       Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => IncomeScreen(
-            currentLanguage: _currentLanguage,
-            onIncomeAdded: _loadData,
-          ),
-        ),
-      );
-    } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
-        ),
-        builder: (context) => AddTransactionSheet(
-          isIncome: isIncome,
-          currentLanguage: _currentLanguage,
-          onTransactionAdded: _loadData,
-        ),
-      );
-    }
+  void _showAddTransactionSheet({bool isIncome = false, TransactionModel? transaction}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+      ),
+      builder: (context) => AddTransactionSheet(
+        isIncome: isIncome,
+        currentLanguage: _currentLanguage,
+        onTransactionAdded: _loadData,
+        transaction: transaction,
+      ),
+    );
   }
 
   @override
@@ -466,7 +461,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Limited List
                       TransactionList(
                         transactions: _transactions.take(5).toList(), 
-                        language: _currentLanguage
+                        language: _currentLanguage,
+                        onTransactionTap: (tx) => _showAddTransactionSheet(
+                          isIncome: tx.type == 'income' || tx.type == 'loan_taken',
+                          transaction: tx,
+                        ),
                       ),
                     ],
                   ),
@@ -540,13 +539,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                         child: IconButton(
-                          onPressed: () {
-                             Navigator.push(
+                          onPressed: () async {
+                             await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => LoansScreen(currentLanguage: _currentLanguage),
                               ),
                             );
+                            _loadData();
                           },
                           icon: const Icon(Icons.handshake_outlined, color: Color(0xFF1E40AF)), // Blue Handshake
                           tooltip: AppStrings.get(_currentLanguage, 'loans'),
@@ -706,8 +706,14 @@ class BalanceCard extends StatelessWidget {
 class TransactionList extends StatelessWidget {
   final List<TransactionModel> transactions;
   final String language;
+  final Function(TransactionModel) onTransactionTap;
 
-  const TransactionList({super.key, required this.transactions, required this.language});
+  const TransactionList({
+    super.key, 
+    required this.transactions, 
+    required this.language,
+    required this.onTransactionTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -733,74 +739,78 @@ class TransactionList extends StatelessWidget {
         final isExpense = tx.type == 'expense';
         final amount = tx.amount;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.withOpacity(0.1)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: isExpense ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(12),
+        return InkWell(
+          onTap: () => onTransactionTap(tx),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.withOpacity(0.1)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: isExpense ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isExpense ? Icons.shopping_bag_outlined : Icons.account_balance_wallet_outlined,
+                    color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
+                  ),
                 ),
-                child: Icon(
-                  isExpense ? Icons.shopping_bag_outlined : Icons.account_balance_wallet_outlined,
-                  color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tx.title,
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: const Color(0xFF1A1C1E),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        AppStrings.getCategory(language, tx.category),
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      tx.title,
+                      '${isExpense ? "-" : "+"} ৳${NumberFormat('#,##0').format(amount)}',
                       style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: const Color(0xFF1A1C1E),
+                        color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      AppStrings.getCategory(language, tx.category),
+                      DateFormat('MMM d, h:mm a').format(tx.date),
                       style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: Colors.grey,
+                        fontSize: 11,
+                        color: Colors.grey[400],
                       ),
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${isExpense ? "-" : "+"} ৳${NumberFormat('#,##0').format(amount)}',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    DateFormat('MMM d, h:mm a').format(tx.date),
-                    style: GoogleFonts.outfit(
-                      fontSize: 11,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

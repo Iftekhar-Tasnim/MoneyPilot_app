@@ -91,6 +91,16 @@ CREATE TABLE notifications (
     return result.map((json) => TransactionModel.fromMap(json)).toList();
   }
 
+  Future<int> update(TransactionModel transaction) async {
+    final db = await instance.database;
+    return await db.update(
+      'transactions',
+      transaction.toMap(),
+      where: 'id = ?',
+      whereArgs: [transaction.id],
+    );
+  }
+
   Future<int> delete(int id) async {
     final db = await instance.database;
     return await db.delete(
@@ -99,7 +109,7 @@ CREATE TABLE notifications (
       whereArgs: [id],
     );
   }
-  
+
   // Get Summary (Total Balance, Income, Expense)
   Future<Map<String, double>> getSummary() async {
     final db = await instance.database;
@@ -111,9 +121,9 @@ CREATE TABLE notifications (
     for (var row in result) {
       final amount = row['amount'] as double;
       final type = row['type'] as String;
-      if (type == 'income' || type == 'loan_taken') {
+      if (type == 'income' || type == 'loan_taken' || type == 'loan_recovery') {
         income += amount;
-      } else {
+      } else if (type == 'expense' || type == 'loan_given' || type == 'loan_repayment') {
         expense += amount;
       }
     }
@@ -166,9 +176,9 @@ CREATE TABLE notifications (
     for (var row in result) {
       final amount = row['amount'] as double;
       final type = row['type'] as String;
-      if (type == 'income' || type == 'loan_taken') {
+      if (type == 'income' || type == 'loan_taken' || type == 'loan_recovery') {
         income += amount;
-      } else {
+      } else if (type == 'expense' || type == 'loan_given' || type == 'loan_repayment') {
         expense += amount;
       }
     }

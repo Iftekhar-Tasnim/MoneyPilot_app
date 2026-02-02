@@ -29,8 +29,54 @@ class _LoansScreenState extends State<LoansScreen> with SingleTickerProviderStat
   Future<void> _loadLoans() async {
     setState(() => _isLoading = true);
     final allTx = await DatabaseService.instance.readAllTransactions();
+    
+    // Logic: 
+    // - Given loans are reduced by loan_recovery
+    // - Taken loans are reduced by loan_repayment
+    // We'll group by title to associate settlements with original loans.
+    // Note: This assumes title is consistent (which we enforced in _settleLoan)
+    
+    final Map<String, double> netBalances = {};
+    final Map<String, TransactionModel> originalLoans = {};
+
+    for (var tx in allTx) {
+      if (tx.category != 'loan') continue;
+
+      // Strip " (Settled)" suffix for matching if it exists
+      final baseTitle = tx.title.replaceFirst(' (Settled)', '');
+      
+      double amount = tx.amount;
+      if (tx.type == 'loan_recovery' || tx.type == 'loan_repayment') {
+        amount = -amount; // Settlements reduce the balance
+      }
+
+      netBalances[baseTitle] = (netBalances[baseTitle] ?? 0) + amount;
+      
+      // Keep track of one original transaction to use as a model for the list item
+      if (tx.type == 'loan_given' || tx.type == 'loan_taken') {
+        originalLoans[baseTitle] = tx;
+      }
+    }
+
+    final List<TransactionModel> activeLoans = [];
+    netBalances.forEach((title, balance) {
+      if (balance.abs() > 0.01) { // Not fully settled
+        final original = originalLoans[title];
+        if (original != null) {
+          activeLoans.add(TransactionModel(
+            id: original.id,
+            title: title,
+            amount: balance,
+            date: original.date,
+            type: original.type,
+            category: original.category,
+          ));
+        }
+      }
+    });
+
     setState(() {
-      _loans = allTx.where((tx) => tx.type == 'loan_given' || tx.type == 'loan_taken').toList();
+      _loans = activeLoans;
       _isLoading = false;
     });
   }
@@ -39,62 +85,249 @@ class _LoansScreenState extends State<LoansScreen> with SingleTickerProviderStat
     final amountController = TextEditingController();
     final noteController = TextEditingController();
     final nameController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final lang = widget.currentLanguage;
+    final primaryColor = isGiven ? const Color(0xFF166534) : const Color(0xFFB91C1C);
+    final backgroundColor = isGiven ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isGiven ? 'Lend Money (Given)' : 'Borrow Money (Taken)'), // Simplified for now, should use AppStrings
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Amount', prefixText: '৳ '),
-            ),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Person Name'),
-            ),
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(labelText: 'Note (Optional)'),
-            ),
-          ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              if (amountController.text.isEmpty || nameController.text.isEmpty) return;
-              final amount = double.tryParse(amountController.text) ?? 0;
-              
-              final tx = TransactionModel(
-                title: '${nameController.text} ${noteController.text.isNotEmpty ? '(${noteController.text})' : ''}',
-                amount: amount,
-                date: DateTime.now(),
-                type: isGiven ? 'loan_given' : 'loan_taken',
-                category: 'loan',
-              );
-              
-              await DatabaseService.instance.create(tx);
-              _loadLoans();
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text('Save'),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          left: 24, 
+          right: 24, 
+          top: 12
+        ),
+        child: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isGiven ? AppStrings.get(lang, 'add_income') : AppStrings.get(lang, 'add_expense'), // Fallback labels
+                      style: GoogleFonts.outfit(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1A1C1E),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: backgroundColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isGiven ? Icons.arrow_outward : Icons.arrow_downward,
+                        color: primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                
+                // Amount Input
+                TextFormField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: GoogleFonts.outfit(
+                    fontSize: 32, 
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                  textAlign: TextAlign.center,
+                  decoration: InputDecoration(
+                    prefixText: '৳ ',
+                    prefixStyle: GoogleFonts.outfit(
+                      fontSize: 32, 
+                      fontWeight: FontWeight.bold,
+                      color: primaryColor,
+                    ),
+                    hintText: '0.00',
+                    hintStyle: TextStyle(color: Colors.grey[300]),
+                    filled: true,
+                    fillColor: backgroundColor.withOpacity(0.5),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.all(20),
+                  ),
+                  validator: (val) => val == null || val.isEmpty ? AppStrings.get(lang, 'enter_amount') : null,
+                ),
+                const SizedBox(height: 24),
+
+                // Name Input
+                Text(
+                  AppStrings.get(lang, 'category'), // Using category as a close match or I should add 'person_name'
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: nameController,
+                  style: GoogleFonts.outfit(),
+                  decoration: InputDecoration(
+                    hintText: 'Who are you dealing with?',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[200]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[200]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: primaryColor, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  validator: (val) => val == null || val.isEmpty ? AppStrings.get(lang, 'enter_description') : null,
+                ),
+                const SizedBox(height: 20),
+
+                // Note Input
+                Text(
+                  AppStrings.get(lang, 'description'),
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: noteController,
+                  style: GoogleFonts.outfit(),
+                  decoration: InputDecoration(
+                    hintText: 'Add some details',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[200]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[200]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: primaryColor, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // Save Button
+                Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (formKey.currentState!.validate()) {
+                        final amountValue = double.tryParse(amountController.text) ?? 0;
+                        
+                        final tx = TransactionModel(
+                          title: '${nameController.text} ${noteController.text.isNotEmpty ? '(${noteController.text})' : ''}',
+                          amount: amountValue,
+                          date: DateTime.now(),
+                          type: isGiven ? 'loan_given' : 'loan_taken',
+                          category: 'loan',
+                        );
+                        
+                        await DatabaseService.instance.create(tx);
+                        _loadLoans();
+                        if (mounted) Navigator.pop(context);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      AppStrings.get(lang, 'save_transaction'),
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Future<void> _settleLoan(TransactionModel loan) async {
-    // For now, just delete the loan. In future, we might mark as 'settled'.
-    await DatabaseService.instance.delete(loan.id!);
+    final isGiven = loan.type == 'loan_given';
+    
+    final settlement = TransactionModel(
+      title: '${loan.title} (Settled)',
+      amount: loan.amount, // Settle full amount for now
+      date: DateTime.now(),
+      type: isGiven ? 'loan_recovery' : 'loan_repayment',
+      category: 'loan',
+    );
+
+    await DatabaseService.instance.create(settlement);
     _loadLoans();
+    
     if (mounted) {
        ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Loan settled')),
+         SnackBar(
+           content: Text(AppStrings.get(widget.currentLanguage, 'loan_settled_msg')),
+           backgroundColor: Colors.green,
+         ),
        );
     }
   }
@@ -151,7 +384,7 @@ class _LoansScreenState extends State<LoansScreen> with SingleTickerProviderStat
 
   Widget _buildLoanList(List<TransactionModel> loans, double total, bool isGiven, String lang) {
     if (loans.isEmpty) {
-      return Center(child: Text('No active loans', style: GoogleFonts.outfit(color: Colors.grey)));
+      return Center(child: Text(AppStrings.get(lang, 'loan_no_active'), style: GoogleFonts.outfit(color: Colors.grey)));
     }
 
     return Column(

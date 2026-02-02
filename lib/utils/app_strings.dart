@@ -57,7 +57,6 @@ class AppStrings {
       'this_month': 'This Month',
       'daily_avg': 'Daily Avg',
       'max_spend': 'Max Spend',
-
       'bonus': 'Bonus',
       'remaining_balance': 'Remaining',
       'this_month_balance': 'This Month Balance',
@@ -79,6 +78,49 @@ class AppStrings {
       'delete': 'Delete',
       'budget_alert': 'Budget Alert',
       'loan_reminder': 'Loan Reminder',
+
+      // New Keys for Filters & UI Overhaul
+      'search_hint': 'Search transactions...',
+      'quick_select': 'Quick Select',
+      'filters': 'Filters',
+      'reset_all': 'Reset All',
+      'date_range': 'Date Range',
+      'today': 'Today',
+      'last_3_months': 'Last 3 Months',
+      'select_custom_range': 'Select Custom Range',
+      'apply_filters': 'Apply Filters',
+      'filtered_results': 'Filtered Results',
+      'no_matching_results': 'No matching results',
+      'clear_filters': 'Clear Filters',
+      'transaction_type': 'Transaction Type',
+      'edit_income': 'Edit Income',
+      'edit_expense': 'Edit Expense',
+
+      // Voice Processing
+      'processing': 'Processing...',
+      'could_not_understand': 'Could not understand. Try again.',
+      'transaction_added': 'Transaction Added!',
+      'api_limit_reached': 'API Limit Reached. Please wait.',
+      'api_key_missing': 'API Key missing. Check Settings.',
+
+      // Extended Categories
+      'dining': 'Dining',
+      'groceries': 'Groceries',
+      'fuel': 'Fuel',
+      'clothing': 'Clothing',
+      'electronics': 'Electronics',
+      'rent': 'Rent',
+      'utilities': 'Utilities',
+      'movies': 'Movies',
+      'medicine': 'Medicine',
+      'education': 'Education',
+      'tuition': 'Tuition',
+      'travel': 'Travel',
+      'investment': 'Investment',
+      'loan_recovery': 'Loan Recovery',
+      'loan_repayment': 'Loan Repayment',
+      'loan_settled_msg': 'Loan settled successfully!',
+      'loan_no_active': 'No active loans',
     },
     'bn': {
       'app_title': 'মানি পাইলট',
@@ -137,7 +179,6 @@ class AppStrings {
       'this_month': 'এই মাস',
       'daily_avg': 'দৈনিক গড়',
       'max_spend': 'সর্বোচ্চ খরচ',
-
       'bonus': 'বোনাস',
       'remaining_balance': 'অবশিষ্ট',
       'this_month_balance': 'এই মাসের ব্যালেন্স',
@@ -159,17 +200,58 @@ class AppStrings {
       'delete': 'মুছুন',
       'budget_alert': 'বাজেট সতর্কতা',
       'loan_reminder': 'ঋণ মনে করিয়ে দিন',
+
+      // New Keys for Filters & UI Overhaul
+      'search_hint': 'লেনদেন খুঁজুন...',
+      'quick_select': 'দ্রুত নির্বাচন',
+      'filters': 'ফিল্টার',
+      'reset_all': 'সব মুছুন',
+      'date_range': 'তারিখের পরিসীমা',
+      'today': 'আজ',
+      'last_3_months': 'গত ৩ মাস',
+      'select_custom_range': 'পছন্দমতো তারিখ নির্বাচন করুন',
+      'apply_filters': 'ফিল্টার প্রয়োগ করুন',
+      'filtered_results': 'ফিল্টার করা ফলাফল',
+      'no_matching_results': 'কোনো মিল পাওয়া যায়নি',
+      'clear_filters': 'ফিল্টার মুছুন',
+      'transaction_type': 'লেনদেনের ধরন',
+      'edit_income': 'আয় সংশোধন',
+      'edit_expense': 'ব্যয় সংশোধন',
+
+      // Voice Processing
+      'processing': 'প্রক্রিয়াধীন...',
+      'could_not_understand': 'বুঝতে পারিনি। আবার চেষ্টা করুন।',
+      'transaction_added': 'লেনদেন যোগ করা হয়েছে!',
+      'api_limit_reached': 'এপিআই সীমা শেষ। কিছুক্ষণ পর চেষ্টা করুন।',
+      'api_key_missing': 'এপিআই কি পাওয়া যায়নি। সেটিংস দেখুন।',
+
+      // Extended Categories
+      'dining': 'ডাইনিং',
+      'groceries': 'মুদি বাজার',
+      'fuel': 'জ্বালানি',
+      'clothing': 'পোশাক',
+      'electronics': 'ইলেকট্রনিক্স',
+      'rent': 'ভাড়া',
+      'utilities': 'ইউটিলিটি বিল',
+      'movies': 'চলচ্চিত্র',
+      'medicine': 'ওষুধ',
+      'education': 'শিক্ষা',
+      'tuition': 'টিউশন',
+      'travel': 'ভ্রমণ',
+      'investment': 'বিনিয়োগ',
+      'loan_recovery': 'ঋণ আদায়',
+      'loan_repayment': 'ঋণ পরিশোধ',
+      'loan_settled_msg': 'ঋণ সফলভাবে শোধ করা হয়েছে!',
+      'loan_no_active': 'বর্তমানে কোনো ঋণ নেই',
     },
   };
 
   static String get(String lang, String key) {
-    return _localizedValues[lang]?[key] ?? _localizedValues['en']![key]!;
+    return _localizedValues[lang]?[key] ?? _localizedValues['en']?[key] ?? key;
   }
   
   // Helper to translate categories
   static String getCategory(String lang, String category) {
-    // Attempt to find a translation for the category, fallback to original if not found
-    // This assumes category names in DB match the keys or are English by default
     final key = category.toLowerCase();
     return _localizedValues[lang]?[key] ?? category;
   }
