@@ -1,4 +1,5 @@
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:flutter/services.dart';
 
 class VoiceService {
   final SpeechToText _speech = SpeechToText();
@@ -61,6 +62,7 @@ class VoiceService {
 
   Future<String?> startListening({
     required Function(String) onResult,
+    Function(String)? onPartialResult, // New callback for partials
     required String languageCode, // 'en' or 'bn'
   }) async {
     String? warningMessage;
@@ -70,6 +72,8 @@ class VoiceService {
     }
 
     if (_isInitialized) {
+      await HapticFeedback.lightImpact(); // Haptic feedback on start
+
       final selectedLocale = _getBestLocale(languageCode);
       print('DEBUG: VoiceService using locale: $selectedLocale for lang: $languageCode');
 
@@ -85,12 +89,18 @@ class VoiceService {
         onResult: (result) {
           if (result.finalResult) {
             onResult(result.recognizedWords);
+          } else {
+             // Valid partial result
+             if (onPartialResult != null) {
+               onPartialResult(result.recognizedWords);
+             }
           }
         },
         localeId: selectedLocale,
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 5),
+        pauseFor: const Duration(milliseconds: 2500), // Reduced to 2.5s for snappier experience
         cancelOnError: true,
+        partialResults: true, // Enable partials
       );
     }
     return warningMessage;
@@ -98,6 +108,7 @@ class VoiceService {
 
   Future<void> stop() async {
     if (_isInitialized) {
+      await HapticFeedback.lightImpact(); // Haptic feedback on stop
       await _speech.stop();
     }
   }

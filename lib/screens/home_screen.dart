@@ -41,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isListening = false;
   bool _isProcessing = false;
   final ValueNotifier<String?> _voiceWarningNotifier = ValueNotifier(null);
+  final ValueNotifier<String> _voiceTextNotifier = ValueNotifier(''); // For live transcripts
   int _unreadCount = 0;
 
   @override
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _voiceWarningNotifier.dispose();
+    _voiceTextNotifier.dispose();
     super.dispose();
   }
 
@@ -109,6 +111,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  String _liveVoiceText = ''; // To show live text
+
   Future<void> _handleVoiceInput() async {
     if (_isListening || _isProcessing) {
       await _voiceService.stop();
@@ -116,8 +120,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() => _isListening = true);
-    _voiceWarningNotifier.value = null; // Reset warning
+    setState(() {
+      _isListening = true;
+      _liveVoiceText = ''; // Reset
+    });
+    _voiceWarningNotifier.value = null; 
     
     // Show listening dialog
     showDialog(
@@ -133,7 +140,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(AppStrings.get(_currentLanguage, 'speak') + '...'),
+                   // Live Transcription Update
+                  StatefulBuilder(
+                    builder: (context, setState) {
+                      return ValueListenableBuilder<String>(
+                        valueListenable: _voiceTextNotifier,
+                        builder: (context, text, _) {
+                            return Text(
+                               text.isEmpty ? AppStrings.get(_currentLanguage, 'speak') + '...' : text,
+                               style: text.isEmpty 
+                                 ? const TextStyle(color: Colors.grey)
+                                 : const TextStyle(color: Colors.black, fontWeight: FontWeight.w500),
+                            );
+                        },
+                      );
+                    }
+                  ),
+                  
                   ValueListenableBuilder<String?>(
                     valueListenable: _voiceWarningNotifier,
                     builder: (context, warning, _) {
@@ -161,8 +184,6 @@ class _HomeScreenState extends State<HomeScreen> {
               if (warning == 'online_mode_pack_missing') {
                 return TextButton(
                   onPressed: () {
-                     // Open settings to help user install pack
-                     // We use AppSettings.openAppSettings() as a generic fallback or openInputMethodSettings
                      AppSettings.openAppSettings(); 
                   },
                   child: const Text('Open Settings'),
@@ -186,15 +207,21 @@ class _HomeScreenState extends State<HomeScreen> {
          _voiceService.stop();
          setState(() {
             _isListening = false;
+            _liveVoiceText = '';
          });
        }
     });
 
-    // Pass simple code 'bn' or 'en' - service handles locale logic
     final warning = await _voiceService.startListening(
       languageCode: _currentLanguage,
+      onPartialResult: (text) {
+        _voiceTextNotifier.value = text;
+      },
       onResult: (text) async {
         if (_isProcessing) return; 
+        
+        // Final text received
+        _voiceTextNotifier.value = text;
         _isProcessing = true;
         _voiceWarningNotifier.value = null; 
         
@@ -243,16 +270,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Phase 6: Check Correction Memory first
                 final knownCategory = await DatabaseService.instance.getCorrection(clause);
                 
-                if (knownCategory != null) {
-                  print('DEBUG: Found correction for "$clause" -> "$knownCategory"');
-                  // We can skip AI entirely?
-                  // Wait, we need the AMOUNT. 
-                  // So we still need AI to parse amount/desc, but we force the category.
-                  // OR we try to regex parse?
-                  // Plan says "Apply correction memory mapping before AI next time".
-                  // Simplest: Let AI parse, then override with known category.
-                }
-
                 final result = await GeminiService.instance.parseTransaction(clause);
                 
                 for (var txData in result) {
@@ -321,19 +338,17 @@ class _HomeScreenState extends State<HomeScreen> {
           
           String errorMsg = AppStrings.get(_currentLanguage, 'voice_error'); // Default fallback if not specific
           if (e.toString().contains('Quota exceeded')) {
-            errorMsg = AppStrings.get(_currentLanguage, 'api_limit_reached');
-          } else if (e.toString().contains('API Key not found')) {
-            errorMsg = AppStrings.get(_currentLanguage, 'api_key_missing');
+             errorMsg = 'API Quota Exceeded. Please check billing.';
           }
           
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
             );
           }
+        } finally {
+           _isProcessing = false; // CRITICAL FIX: Always reset processing state
         }
-        
-        _isProcessing = false;
       },
     );
 
@@ -342,6 +357,8 @@ class _HomeScreenState extends State<HomeScreen> {
        _voiceWarningNotifier.value = warning;
     }
   }
+
+
 
   void _showAddTransactionSheet({bool isIncome = false, TransactionModel? transaction, String? originalPhrase}) {
     showModalBottomSheet(
