@@ -11,6 +11,7 @@ class VoiceService {
   List<LocaleName> _availableLocales = [];
 
   Future<bool> init() async {
+    // Always check status or re-initialize if needed
     if (!_isInitialized) {
       try {
         _isInitialized = await _speech.initialize(
@@ -21,6 +22,8 @@ class VoiceService {
               msg = 'Listening timed out. Please speak louder.';
             } else if (val.errorMsg == 'error_no_match') {
               msg = 'Could not understand. Try again.';
+            } else if (val.errorMsg == 'error_busy') {
+              msg = 'Microphone is busy. Please try again.';
             }
             if (onErrorChanged != null) onErrorChanged!(msg);
           },
@@ -28,6 +31,7 @@ class VoiceService {
             print('Speech Status: $val');
             if (onStatusChanged != null) onStatusChanged!(val);
           },
+          debugLogging: true, // Help debug 
         );
         if (_isInitialized) {
           _availableLocales = await _speech.locales();
@@ -39,6 +43,14 @@ class VoiceService {
       }
     }
     return _isInitialized;
+  }
+
+  // Force reset method
+  Future<void> reset() async {
+     if (_isInitialized) {
+       await _speech.cancel(); // Cancel clears state better than stop
+       await Future.delayed(const Duration(milliseconds: 100)); // Small cool-down
+     }
   }
 
   String _getBestLocale(String langCode) {
@@ -72,6 +84,11 @@ class VoiceService {
     }
 
     if (_isInitialized) {
+      // Force clean slate
+      if (_speech.isListening) {
+         await reset(); 
+      }
+      
       await HapticFeedback.lightImpact(); // Haptic feedback on start
 
       final selectedLocale = _getBestLocale(languageCode);

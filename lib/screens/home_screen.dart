@@ -123,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _isListening = true;
       _liveVoiceText = ''; // Reset
+      _voiceTextNotifier.value = ''; // Clear previous session text
     });
     _voiceWarningNotifier.value = null; 
     
