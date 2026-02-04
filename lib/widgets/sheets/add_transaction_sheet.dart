@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import '../models/transaction_model.dart';
-import '../services/database_service.dart';
-import '../utils/app_strings.dart';
+import '../../models/transaction_model.dart';
+import '../../services/database_service.dart';
+import '../../utils/app_strings.dart';
 
 class AddTransactionSheet extends StatefulWidget {
   final bool isIncome;
   final String currentLanguage;
   final Function() onTransactionAdded;
   final TransactionModel? transaction; // Optional transaction for editing
+  final String? originalPhrase; // Phase 6: For learning corrections
 
   const AddTransactionSheet({
     super.key,
@@ -17,6 +18,7 @@ class AddTransactionSheet extends StatefulWidget {
     required this.currentLanguage,
     required this.onTransactionAdded,
     this.transaction,
+    this.originalPhrase,
   });
 
   @override
@@ -29,6 +31,9 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   late TextEditingController _amountController;
   late DateTime _selectedDate;
   String? _selectedCategory;
+  
+  // To track if user changed the category
+  String? _initialCategory;
   
   // Predefined Categories with Icons
   final Map<String, IconData> _incomeCategories = {
@@ -69,7 +74,16 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
     _titleController = TextEditingController(text: tx?.title ?? '');
     _amountController = TextEditingController(text: tx?.amount != null ? tx!.amount.toStringAsFixed(2) : '');
     _selectedDate = tx?.date ?? DateTime.now();
-    _selectedCategory = tx?.category ?? (widget.isIncome ? _incomeCategories.keys.first : _expenseCategories.keys.first);
+    
+    final validCategories = widget.isIncome ? _incomeCategories.keys : _expenseCategories.keys;
+    
+    // Phase 4: Validate Category
+    String initialCategory = tx?.category ?? (widget.isIncome ? _incomeCategories.keys.first : _expenseCategories.keys.first);
+    if (!validCategories.contains(initialCategory)) {
+      initialCategory = 'Other';
+    }
+    _selectedCategory = initialCategory;
+    _initialCategory = initialCategory; // Track initial
   }
 
   @override
@@ -107,6 +121,29 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
     if (_formKey.currentState!.validate()) {
       final amount = double.tryParse(_amountController.text) ?? 0.0;
       
+      // Phase 4: Hard Guardrails
+      if (amount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppStrings.get(widget.currentLanguage, 'amount_must_be_positive') ?? 'Amount must be positive'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      
+      if (amount > 1000000) { // 10 Lakh limit
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Amount exceeds limit (1,000,000)'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      
+      // Phase 6: Learning Loop (Save Correction)
+      if (widget.originalPhrase != null && 
+          _selectedCategory != null && 
+          _selectedCategory != _initialCategory) {
+        // User changed the category manually!
+        await DatabaseService.instance.saveCorrection(widget.originalPhrase!, _selectedCategory!);
+      }
+      
       final tx = TransactionModel(
         id: widget.transaction?.id,
         title: _titleController.text,
@@ -116,7 +153,10 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
         category: _selectedCategory ?? 'Other',
       );
 
-      if (widget.transaction != null) {
+
+
+      // Fix: Check if ID exists. Voice drafts have a model but NO ID.
+      if (widget.transaction != null && widget.transaction!.id != null) {
         await DatabaseService.instance.update(tx);
       } else {
         await DatabaseService.instance.create(tx);
@@ -130,7 +170,8 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   @override
   Widget build(BuildContext context) {
     final isIncome = widget.isIncome;
-    final isEditing = widget.transaction != null;
+    // Fix: Only consider it "Editing" if it's an existing DB record
+    final isEditing = widget.transaction != null && widget.transaction!.id != null;
     final lang = widget.currentLanguage;
     final primaryColor = isIncome ? const Color(0xFF166534) : const Color(0xFFB91C1C);
     final backgroundColor = isIncome ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);

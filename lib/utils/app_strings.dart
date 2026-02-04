@@ -121,6 +121,8 @@ class AppStrings {
       'loan_repayment': 'Loan Repayment',
       'loan_settled_msg': 'Loan settled successfully!',
       'loan_no_active': 'No active loans',
+      'review_transactions': 'Review Transactions',
+      'close': 'Close',
     },
     'bn': {
       'app_title': 'মানি পাইলট',
@@ -243,6 +245,8 @@ class AppStrings {
       'loan_repayment': 'ঋণ পরিশোধ',
       'loan_settled_msg': 'ঋণ সফলভাবে শোধ করা হয়েছে!',
       'loan_no_active': 'বর্তমানে কোনো ঋণ নেই',
+      'review_transactions': 'লেনদেন পর্যালোচনা',
+      'close': 'বন্ধ করুন',
     },
   };
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/transaction_model.dart';
-import '../services/gemini_service.dart';
-import '../utils/app_strings.dart';
+import '../../../models/transaction_model.dart';
+import '../../../services/gemini_service.dart';
+import '../../../utils/app_strings.dart';
 
 class InsightsCard extends StatefulWidget {
   final List<TransactionModel> transactions;
@@ -20,7 +20,7 @@ class InsightsCard extends StatefulWidget {
 
 class _InsightsCardState extends State<InsightsCard> {
   bool _isLoading = false;
-  Map<String, String>? _advice;
+  Map<String, dynamic>? _advice;
 
   Future<void> _analyze() async {
     if (widget.transactions.isEmpty) return;
@@ -40,6 +40,8 @@ class _InsightsCardState extends State<InsightsCard> {
   @override
   Widget build(BuildContext context) {
     var lang = widget.currentLanguage;
+    final isBangla = lang == 'bn';
+    final adviceData = _advice != null ? (_advice![isBangla ? 'bn' : 'en'] as Map<String, dynamic>?) : null;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -115,7 +117,7 @@ class _InsightsCardState extends State<InsightsCard> {
               ),
             ),
 
-          if (_advice != null) ...[
+          if (adviceData != null) ...[
             const SizedBox(height: 20),
             
             // Good Job Section
@@ -134,7 +136,7 @@ class _InsightsCardState extends State<InsightsCard> {
                        crossAxisAlignment: CrossAxisAlignment.start,
                        children: [
                          Text(AppStrings.get(lang, 'good_job'), style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12, color: const Color(0xFF166534))),
-                         Text(_advice!['good'] ?? '', style: GoogleFonts.outfit(color: const Color(0xFF14532D))),
+                         Text(adviceData['good'] ?? '', style: GoogleFonts.outfit(color: const Color(0xFF14532D))),
                        ],
                      ),
                    )
@@ -160,7 +162,7 @@ class _InsightsCardState extends State<InsightsCard> {
                        crossAxisAlignment: CrossAxisAlignment.start,
                        children: [
                          Text(AppStrings.get(lang, 'tips'), style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12, color: const Color(0xFFB45309))),
-                         Text(_advice!['tip'] ?? '', style: GoogleFonts.outfit(color: const Color(0xFF78350F))),
+                         Text(adviceData['tip'] ?? '', style: GoogleFonts.outfit(color: const Color(0xFF78350F))),
                        ],
                      ),
                    )

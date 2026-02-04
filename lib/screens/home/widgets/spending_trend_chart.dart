@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import '../models/transaction_model.dart';
-import '../utils/app_strings.dart';
+import '../../../models/transaction_model.dart';
+import '../../../utils/app_strings.dart';
 
 class SpendingTrendChart extends StatefulWidget {
   final List<TransactionModel> transactions;

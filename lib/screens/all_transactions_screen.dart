@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:demo_app/widgets/add_transaction_sheet.dart';
+import '../widgets/sheets/add_transaction_sheet.dart';
 import '../models/transaction_model.dart';
 import '../utils/app_strings.dart';
 import '../screens/home_screen.dart';

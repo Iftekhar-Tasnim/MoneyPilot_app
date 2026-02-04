@@ -8,16 +8,21 @@ import '../models/transaction_model.dart';
 import '../services/database_service.dart';
 import '../screens/settings_screen.dart';
 import '../screens/all_transactions_screen.dart';
-import '../widgets/add_transaction_sheet.dart';
+import '../widgets/sheets/add_transaction_sheet.dart';
 import '../utils/app_strings.dart';
 import '../services/gemini_service.dart';
 import '../services/voice_service.dart';
-import '../widgets/spending_trend_chart.dart';
-import '../widgets/quick_stats_card.dart';
+import '../services/preprocessing/text_preprocessor.dart';
+import '../services/rules/category_rules.dart';
+import '../models/draft_transaction.dart';
+import 'home/widgets/spending_trend_chart.dart';
+import '../widgets/dialogs/transaction_review_dialog.dart';
+import 'home/widgets/quick_stats_card.dart';
 import 'income_screen.dart';
 import 'loans_screen.dart';
-import '../widgets/insights_card.dart';
-import '../services/database_service.dart';
+import 'home/widgets/insights_card.dart';
+import 'home/widgets/balance_card.dart';
+import 'home/widgets/transaction_list.dart';
 import 'notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -79,8 +84,8 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
-  Future<void> _loadData() async { // Renamed from _refreshData
-    setState(() => _isLoading = true);
+  Future<void> _loadData({bool showLoading = true}) async { 
+    if (showLoading) setState(() => _isLoading = true);
     
     // Monthly Filter Logic
     final now = DateTime.now();
@@ -88,12 +93,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final summary = await DatabaseService.instance.getMonthlySummary(now.year, now.month);
     final unreadCount = await DatabaseService.instance.getUnreadNotificationCount();
 
-    setState(() {
-      _transactions = transactions;
-      _summary = summary;
-      _unreadCount = unreadCount;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _transactions = transactions;
+        _summary = summary;
+        _unreadCount = unreadCount;
+        _isLoading = false;
+      });
+    }
   }
   
   void _toggleLanguage() {
@@ -224,30 +231,81 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         try {
-          final data = await GeminiService.instance.parseTransaction(text);
+          // Phase 2: Pre-processing
+          final clauses = TextPreprocessor.instance.process(text);
+          print('DEBUG: Clauses: $clauses');
+
+          List<DraftTransaction> allDrafts = [];
+
+          // Process each clause separately as per plan
+          for (var clause in clauses) {
+             try {
+                // Phase 6: Check Correction Memory first
+                final knownCategory = await DatabaseService.instance.getCorrection(clause);
+                
+                if (knownCategory != null) {
+                  print('DEBUG: Found correction for "$clause" -> "$knownCategory"');
+                  // We can skip AI entirely?
+                  // Wait, we need the AMOUNT. 
+                  // So we still need AI to parse amount/desc, but we force the category.
+                  // OR we try to regex parse?
+                  // Plan says "Apply correction memory mapping before AI next time".
+                  // Simplest: Let AI parse, then override with known category.
+                }
+
+                final result = await GeminiService.instance.parseTransaction(clause);
+                
+                for (var txData in result) {
+                  // Phase 6: Apply Correction Override
+                  if (knownCategory != null) {
+                    txData['category'] = knownCategory; // Override AI
+                  } else {
+                    // Phase 3: Rule-based Overrides (Only if unknown)
+                    CategoryRules.apply(txData, clause);
+                  }
+                  
+                  final tx = TransactionModel(
+                     title: txData['title'] ?? 'Voice Entry',
+                     amount: (txData['amount'] as num).toDouble(),
+                     date: DateTime.now(),
+                     type: (txData['type'] ?? 'expense').toLowerCase(),
+                     category: txData['category'] ?? 'Other',
+                  );
+                  
+                  allDrafts.add(DraftTransaction(model: tx, originalPhrase: clause));
+                }
+                
+             } catch (e) {
+                print('DEBUG: Error parsing clause "$clause": $e');
+             }
+          }
           
           if (mounted && Navigator.canPop(context)) {
             Navigator.pop(context); // Close processing dialog
           }
 
-          if (data != null && mounted) {
-            final tx = TransactionModel(
-               title: data['title'] ?? 'Voice Entry',
-               amount: (data['amount'] as num).toDouble(),
-               date: DateTime.now(),
-               type: (data['type'] ?? 'expense').toLowerCase(),
-               category: data['category'] ?? 'Other',
-            );
-
-            await DatabaseService.instance.create(tx);
-            _loadData();
+          if (allDrafts.isNotEmpty && mounted) {
             
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppStrings.get(_currentLanguage, 'transaction_added')),
-                backgroundColor: Colors.green
-              ),
-            );
+            if (allDrafts.length == 1) {
+              final draft = allDrafts.first;
+              // Phase 1: Disable Auto-Save. Show Edit Sheet instead.
+              _showAddTransactionSheet(
+                isIncome: draft.model.type == 'income',
+                transaction: draft.model,
+                originalPhrase: draft.originalPhrase, // Phase 6 support
+              );
+            } else {
+               // Phase 5: Multiple Transactions Review
+               showDialog(
+                 context: context,
+                 builder: (context) => TransactionReviewDialog(
+                   drafts: allDrafts, 
+                   language: _currentLanguage,
+                   onTransactionSaved: () => _loadData(showLoading: false),
+                 ),
+               );
+            }
+            
           } else if (mounted) {
                ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -285,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showAddTransactionSheet({bool isIncome = false, TransactionModel? transaction}) {
+  void _showAddTransactionSheet({bool isIncome = false, TransactionModel? transaction, String? originalPhrase}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -296,8 +354,9 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => AddTransactionSheet(
         isIncome: isIncome,
         currentLanguage: _currentLanguage,
-        onTransactionAdded: _loadData,
+        onTransactionAdded: () => _loadData(showLoading: false),
         transaction: transaction,
+        originalPhrase: originalPhrase,
       ),
     );
   }
@@ -594,226 +653,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class BalanceCard extends StatelessWidget {
-  final Map<String, double> summary;
-  final String language;
 
-  const BalanceCard({super.key, required this.summary, required this.language});
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1C1E), // Dark card
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            AppStrings.get(language, 'total_balance'),
-            style: GoogleFonts.outfit(
-              color: Colors.white.withOpacity(0.6),
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '৳ ${NumberFormat('#,##0').format(summary['balance'])}',
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildSummaryItem(
-                label: AppStrings.get(language, 'income'),
-                amount: '৳ ${NumberFormat('#,##0').format(summary['income'])}',
-                color: const Color(0xFF22C55E), // Green
-                icon: Icons.arrow_downward,
-              ),
-              Container(width: 1, height: 40, color: Colors.white.withOpacity(0.2)),
-              _buildSummaryItem(
-                label: AppStrings.get(language, 'expense'),
-                amount: '৳ ${NumberFormat('#,##0').format(summary['expense'])}',
-                color: const Color(0xFFEF4444), // Red
-                icon: Icons.arrow_upward,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildSummaryItem({
-    required String label,
-    required String amount,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Expanded(
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 14),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: GoogleFonts.outfit(
-                  color: Colors.white.withOpacity(0.6),
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            amount,
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class TransactionList extends StatelessWidget {
-  final List<TransactionModel> transactions;
-  final String language;
-  final Function(TransactionModel) onTransactionTap;
-
-  const TransactionList({
-    super.key, 
-    required this.transactions, 
-    required this.language,
-    required this.onTransactionTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (transactions.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Text(
-            AppStrings.get(language, 'no_transactions'),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(color: Colors.grey),
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: transactions.length,
-      itemBuilder: (context, index) {
-        final tx = transactions[index];
-        final isExpense = tx.type == 'expense';
-        final amount = tx.amount;
-
-        return InkWell(
-          onTap: () => onTransactionTap(tx),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.withOpacity(0.1)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: isExpense ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    isExpense ? Icons.shopping_bag_outlined : Icons.account_balance_wallet_outlined,
-                    color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tx.title,
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: const Color(0xFF1A1C1E),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        AppStrings.getCategory(language, tx.category),
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${isExpense ? "-" : "+"} ৳${NumberFormat('#,##0').format(amount)}',
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: isExpense ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      DateFormat('MMM d, h:mm a').format(tx.date),
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        color: Colors.grey[400],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}

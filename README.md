@@ -10,9 +10,14 @@ Track your daily income, expenses, and loans by simply speaking naturally in **E
 - **Smart Categorization**: Automatically detects Income/Expense, extracts Amount, and assigns Categories
 - **Multi-Language Support**: Works in **English** and **Bangla** (`bn_BD`)
 - **Robust Error Handling**: Auto-detects silence, timeouts, and API errors with helpful feedback
+- **Preprocessing Layer**: Handles complex sentence structures and filler words for better accuracy.
 
 > [!TIP]
-> Just tap the microphone and say: *"I spent 500 taka on groceries"* or *"Got salary 50,000"*
+> Just tap the microphone and say: *"I spent 500 taka on groceries"* or *"পাঁচশ টাকা বাজার"*
+
+### 🧠 Smart Learning Loop
+- **Correction Memory**: The app learns from your edits. If you change a category (e.g., "Netflix" from *Bills* to *Entertainment*), the app remembers this preference for future transactions.
+- **Rule-Based Overrides**: Deterministic rules for common keywords (e.g., "Rickshaw" -> Transport) ensure speed and consistency.
 
 ### 📊 Dashboard & Analytics
 - **Spending Trends**: Visual line chart with Week/Month toggle filters
@@ -54,6 +59,7 @@ Track your daily income, expenses, and loans by simply speaking naturally in **E
 - **Dual Input**: Voice (FAB) or Manual Entry (Quick Action buttons)
 - **Instant Localization**: Toggle between English/Bangla
 - **Dark Mode Ready**: System-aware theming
+- **Modular Architecture**: Clean, refactored codebase for scalability.
 
 ---
 
@@ -118,7 +124,8 @@ flutter build apk --release
 | Notifications | ✅ | In-app center + scheduled alerts |
 | Spending Trends | ✅ | Charts with filters |
 | Multi-Language | ✅ | English & Bangla |
-| Dark Mode | 🔄 | Partially implemented |
+| Learning Loop | ✅ | Remembers user corrections |
+| Preprocessing | ✅ | Handles Bangla numbers & clauses |
 
 ## 📸 Screenshots
 > Add screenshots showcasing the dashboard, voice input, AI insights, and notification center

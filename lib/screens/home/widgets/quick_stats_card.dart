@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import '../models/transaction_model.dart';
-import '../utils/app_strings.dart';
+import '../../../models/transaction_model.dart';
+import '../../../utils/app_strings.dart';
 
 class QuickStatsCard extends StatelessWidget {
   final List<TransactionModel> transactions;

@@ -23,26 +23,32 @@ class GeminiService {
     );
   }
 
-  Future<Map<String, dynamic>?> parseTransaction(String userText) async {
+  Future<List<Map<String, dynamic>>> parseTransaction(String userText) async {
     final model = await _getModel();
     if (model == null) throw Exception('API Key not found');
 
     final prompt = '''
       Extract transaction details from this text: "$userText".
-      Return ONLY a JSON object with these keys:
-      - title: (string) short description
-      - amount: (number) positive value
-      - type: (string) either "income" or "expense"
-      - category: (string) The Best fitting category.
-        
-        Use these standard categories if they fit well: 
-        [Food, Dining, Groceries, Transport, Fuel, Shopping, Clothing, Bills, Rent, Utilities, Entertainment, Health, Education, Salary, Freelance, Business, Investment, Gift, Travel]
-        
-        **IMPORTANT:** If the transaction does not fit ANY of the above, **INVENT** a new, short (1 word) category name that describes it (e.g., "Charity", "Tax", "Loan").
-        
-      If the text is Bangla, translate and infer the best English category.
-      If meaningful data is missing, return null.
-      JSON:
+      Return ONLY a JSON object with this exact schema:
+      {
+        "transactions": [
+          {
+            "title": "string (short description)",
+            "amount": number (positive),
+            "type": "income" or "expense",
+            "category": "string (Best fitting category or INVENT one)",
+            "note": "string (optional)"
+          }
+        ]
+      }
+
+      Standard Categories: 
+      [Food, Dining, Groceries, Transport, Fuel, Shopping, Clothing, Bills, Rent, Utilities, Entertainment, Health, Education, Salary, Freelance, Business, Investment, Gift, Travel]
+
+      Rules:
+      1. If the text is Bangla, translate and infer.
+      2. If meaningful data is missing, return empty transactions list.
+      3. Valid JSON only. No markdown.
     ''';
 
     try {
@@ -50,7 +56,7 @@ class GeminiService {
       final response = await model.generateContent(content);
       final responseText = response.text;
 
-      if (responseText == null) return null;
+      if (responseText == null) return [];
 
       // Clean up markdown code blocks if present
       print('DEBUG: Gemini Raw Response: $responseText');
@@ -58,14 +64,25 @@ class GeminiService {
       print('DEBUG: Cleaned JSON: $cleanJson');
       
       try {
-        return jsonDecode(cleanJson) as Map<String, dynamic>;
+        final decoded = jsonDecode(cleanJson);
+        if (decoded is Map<String, dynamic> && decoded.containsKey('transactions')) {
+             return List<Map<String, dynamic>>.from(decoded['transactions']);
+        } else if (decoded is Map<String, dynamic>) {
+             // Fallback for single object if AI messes up list structure
+             return [decoded];
+        }
+        return [];
       } catch (e) {
         print('DEBUG: JSON Parse Error: $e');
+        // Do not throw, just return empty to fail gracefully? 
+        // Plan says: "If JSON parsing fails, retry once, then abort." 
+        // For now, I'll throw to let UI handle "Could not understand" or return empty.
+        // Existing UI handles exceptions.
         throw Exception('Failed to parse AI response'); 
       }
     } catch (e) {
       print('Gemini Error: $e');
-      rethrow; // Propagate error (e.g. Quota exceeded) to UI
+      rethrow; 
     }
   }
 
@@ -152,27 +169,36 @@ class GeminiService {
     }
   }
   // Financial Advice (Money Coach)
-  Future<Map<String, String>?> getFinancialAdvice(List<dynamic> transactions) async {
+  Future<Map<String, dynamic>?> getFinancialAdvice(List<dynamic> transactions) async {
     final model = await _getModel();
     if (model == null) throw Exception('API Key not found');
 
     // Summarize data to save tokens
     if (transactions.isEmpty) return null;
     
-    // Take last 20 transactions for analysis
-    final recentTx = transactions.take(20).map((tx) {
+    // Take last 30 transactions for better analysis
+    final recentTx = transactions.take(30).map((tx) {
       return "${tx.amount} (${tx.category})";
     }).join(", ");
 
     final prompt = '''
       Analyze these recent expenses: [$recentTx].
-      Act as a friendly Money Coach.
-      Return ONLY a JSON object with two keys:
-      - "good": One short sentence on what is going well (positive reinforcement).
-      - "tip": One short, actionable tip to save money based on this data.
+      Act as a friendly but professional Financial Advisor.
       
-      Keep it very concise (max 15 words each).
-      JSON:
+      Provide a comprehensive assessment of the user's spending habits.
+      Return ONLY a JSON object with this EXACT structure (no markdown):
+      {
+        "en": {
+          "good": "A specific positive observation about their spending (e.g. 'You kept dining costs low').",
+          "tip": "A comprehensive, actionable advice on how to manage money better based on this data (e.g. 'Your transport costs are high; try monthly passes...')."
+        },
+        "bn": {
+          "good": "Bangla translation of the good observation.",
+          "tip": "Bangla translation of the comprehensive advice."
+        }
+      }
+      
+      Maximize value in minimum words (max 25 words per field).
     ''';
 
     try {
@@ -183,7 +209,7 @@ class GeminiService {
       if (responseText == null) return null;
 
       final cleanJson = responseText.replaceAll('```json', '').replaceAll('```', '').trim();
-      return Map<String, String>.from(jsonDecode(cleanJson));
+      return jsonDecode(cleanJson) as Map<String, dynamic>;
     } catch (e) {
       print('Gemini Advice Error: $e');
       return null;

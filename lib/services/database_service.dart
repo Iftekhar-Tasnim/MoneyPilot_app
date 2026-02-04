@@ -21,7 +21,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // Increment version
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -37,6 +37,16 @@ CREATE TABLE notifications (
   type TEXT NOT NULL,
   isRead INTEGER NOT NULL,
   createdAt TEXT NOT NULL
+)
+''');
+    }
+    
+    // Phase 6: Correction Memory
+    if (oldVersion < 3) {
+      await db.execute('''
+CREATE TABLE correction_memory (
+  phrase TEXT PRIMARY KEY,
+  correct_category TEXT NOT NULL
 )
 ''');
     }
@@ -68,8 +78,17 @@ CREATE TABLE notifications (
   createdAt TEXT NOT NULL
 )
 ''');
+
+    // Phase 6: Correction Memory (Initial Create)
+    await db.execute('''
+CREATE TABLE correction_memory (
+  phrase TEXT PRIMARY KEY,
+  correct_category TEXT NOT NULL
+)
+''');
   }
 
+  // ... (Existing CRUD for Transactions) ...
   Future<TransactionModel> create(TransactionModel transaction) async {
     final db = await instance.database;
     final id = await db.insert('transactions', transaction.toMap());
@@ -238,5 +257,33 @@ CREATE TABLE notifications (
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // ========== LEARNING LOOP (Phase 6) ==========
+  
+  Future<void> saveCorrection(String phrase, String category) async {
+    print('DEBUG: Saving correction "$phrase" -> "$category"');
+    final db = await instance.database;
+    // Insert or replace ensures latest correction is saved
+    await db.insert(
+      'correction_memory', 
+      {'phrase': phrase.trim().toLowerCase(), 'correct_category': category},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<String?> getCorrection(String phrase) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'correction_memory',
+      columns: ['correct_category'],
+      where: 'phrase = ?',
+      whereArgs: [phrase.trim().toLowerCase()],
+    );
+
+    if (maps.isNotEmpty) {
+      return maps.first['correct_category'] as String;
+    }
+    return null;
   }
 }
